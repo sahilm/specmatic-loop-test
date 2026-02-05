@@ -8,11 +8,15 @@ RSpec.describe "Specmatic" do
 
   before(:all) do
     Open3.capture2e("docker-compose down --remove-orphans")
+    @output, @status = Open3.capture2e("docker-compose up --exit-code-from test")
+  end
+
+  after(:all) do
+    Open3.capture2e("docker-compose down --remove-orphans")
   end
 
   it "runs the service stub and tests pass" do
-    output, status = Open3.capture2e("docker-compose up --exit-code-from test")
-    expect(status.success?).to be(true), -> { "docker-compose failed:\n#{output}" }
+    expect(@status.success?).to be(true), -> { "docker-compose failed:\n#{@output}" }
   end
 
   it "generates the correct request/response pairs" do
