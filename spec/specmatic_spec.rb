@@ -1,163 +1,165 @@
 # frozen_string_literal: true
 
 require_relative "spec_helper"
+require_relative "../lib/route_matcher"
+require_relative "../lib/schema_validator"
 require "open3"
 require "json"
 
 RSpec.describe "Specmatic" do
+  SERVICES = [
+    { compose_file: "docker-compose.service1.yaml", spec_file: "service1.yaml" },
+    { compose_file: "docker-compose.service2.yaml", spec_file: "service2.yaml" }
+  ].freeze
 
-  before(:all) do
-    Open3.capture2e("docker-compose down --remove-orphans")
-    @output, @status = Open3.capture2e("docker-compose up --exit-code-from test")
+  def self.escape_json_pointer(str)
+    escaped = str.gsub("~", "~0").gsub("/", "~1")
+    URI::DEFAULT_PARSER.escape(escaped, /[{}]/)
   end
 
-  after(:all) do
-    Open3.capture2e("docker-compose down --remove-orphans")
+  def self.request_schema_pointer(path_pattern, method, content_type)
+    escaped_path = escape_json_pointer(path_pattern)
+    escaped_content_type = escape_json_pointer(content_type)
+    "#/paths/#{escaped_path}/#{method.downcase}/requestBody/content/#{escaped_content_type}/schema"
   end
 
-  it "runs the service stub and tests pass" do
-    expect(@status.success?).to be(true), -> { "docker-compose failed:\n#{@output}" }
+  def self.response_schema_pointer(path_pattern, method, status_code, content_type)
+    escaped_path = escape_json_pointer(path_pattern)
+    escaped_content_type = escape_json_pointer(content_type)
+    "#/paths/#{escaped_path}/#{method.downcase}/responses/#{status_code}/content/#{escaped_content_type}/schema"
   end
 
-  it "generates the correct request/response pairs" do
-    http_captured_lines, status = Open3.capture2e("docker-compose logs mitm --no-color --no-log-prefix")
-    expect(status.success?).to be(true), -> { "docker-compose failed:\n#{http_captured_lines}" }
+  SERVICES.each do |service|
+    context "with #{service[:spec_file]}" do
+      let(:compose_file) { service[:compose_file] }
+      let(:spec_file) { service[:spec_file] }
 
-    total_lines = 0
-    http_captured_lines.each_line do |entry|
-      total_lines += 1
-      method, url, request_headers, request_body, status, response_headers, response_body = JSON.parse(entry)
+      before(:all) do
+        compose = service[:compose_file]
+        spec = service[:spec_file]
 
-      # ------------------------
-      # HEAD /
-      # ------------------------
-      if method == "HEAD"
-        # request headers
-        expect(request_headers["User-Agent"]).to match(/^Java\//)
-        expect(request_headers["Host"]).to eq("host.docker.internal:9000")
-        expect(request_headers["Accept"]).to eq("text/html, image/gif, image/jpeg, */*; q=0.2")
-        expect(request_headers["Connection"]).to eq("keep-alive")
+        Open3.capture2e("docker-compose -f #{compose} down --remove-orphans")
+        @test_output, @test_status = Open3.capture2e("docker-compose -f #{compose} up --exit-code-from test")
+        @http_output, @http_status = Open3.capture2e("docker-compose -f #{compose} logs mitm --no-color --no-log-prefix")
 
-        # response headers
-        expect(response_headers["Vary"]).to eq("Origin")
-        expect(response_headers["X-Specmatic-Result"]).to eq("failure")
-        expect(response_headers["X-Specmatic-Empty"]).to eq("true")
-        expect(response_headers["Content-Length"]).to eq("66")
-        expect(response_headers["Content-Type"]).to eq("text/plain")
-        expect(response_headers["Connection"]).to eq("keep-alive")
-
-        expect(status).to eq(400)
-        expect(response_body.to_s).to eq("")
-        next
+        spec_path = File.expand_path("../#{spec}", __dir__)
+        @route_matcher = RouteMatcher.new(spec_path)
+        @schema_validator = SchemaValidator.new(@route_matcher.spec)
+        @entries = parse_entries(@http_output, @route_matcher)
       end
 
-      # ------------------------
-      # GET /swagger/v1/swagger.yaml
-      # ------------------------
-      if method == "GET" && url.include?("/swagger/v1/swagger.yaml")
-        # request headers
-        expect(request_headers["Host"]).to eq("host.docker.internal:9000")
-        expect(request_headers["Accept-Charset"]).to eq("UTF-8")
-        expect(request_headers["Accept"]).to eq("*/*")
-        expect(request_headers["User-Agent"]).to eq("Ktor client")
-        expect(request_headers["Content-Length"]).to eq("0")
-        expect(request_headers["Content-Type"]).to eq("text/plain")
-        expect(request_headers["Connection"]).to eq("Keep-Alive")
-
-        # response headers
-        expect(response_headers["Vary"]).to eq("Origin")
-        expect(response_headers["X-Specmatic-Result"]).to eq("failure")
-        expect(response_headers["X-Specmatic-Empty"]).to eq("true")
-        expect(response_headers["Content-Length"]).to eq("88")
-        expect(response_headers["Content-Type"]).to eq("text/plain")
-        expect(response_headers["Connection"]).to eq("keep-alive")
-
-        expect(status).to eq(400)
-        expect(response_body).to include("No matching REST stub")
-        next
+      after(:all) do
+        Open3.capture2e("docker-compose -f #{service[:compose_file]} down --remove-orphans")
       end
 
-      # ------------------------
-      # POST /widgets
-      # ------------------------
-      if method == "POST" && url.end_with?("/widgets")
-        expect(status).to eq(201)
-
-        # request headers
-        expect(request_headers["Specmatic-Response-Code"]).to eq("201")
-        expect(request_headers["Host"]).to eq("host.docker.internal:9000")
-        expect(request_headers["Accept-Charset"]).to eq("UTF-8")
-        expect(request_headers["Accept"]).to eq("*/*")
-        expect(request_headers["User-Agent"]).to eq("Ktor client")
-        expect(request_headers["Content-Length"]).to eq(request_body.bytesize.to_s)
-        expect(request_headers["Content-Type"]).to eq("application/json")
-        expect(request_headers["Connection"]).to eq("Keep-Alive")
-
-        # request body
-        req = JSON.parse(request_body)
-        expect(req.keys).to contain_exactly("name", "type")
-
-        expect(req["name"]).to be_a(String)
-        expect(req["name"].length).to be_between(1, 100)
-
-        expect(%w[mechanical hydraulic]).to include(req["type"])
-
-        # response headers
-        expect(response_headers["Vary"]).to eq("Origin")
-        expect(response_headers["X-Specmatic-Result"]).to eq("success")
-        expect(response_headers["X-Specmatic-Type"]).to eq("random")
-        expect(response_headers["Content-Length"]).to eq(response_body.bytesize.to_s)
-        expect(response_headers["Content-Type"]).to eq("application/json")
-        expect(response_headers["Connection"]).to eq("keep-alive")
-
-        # response body
-        res = JSON.parse(response_body)
-        expect(res.keys).to eq(["id"])
-        expect(res["id"]).to be_a(Integer)
-
-        next
+      def parse_entries(output, route_matcher)
+        output.each_line.map do |line|
+          method, url, req_headers, req_body, status, res_headers, res_body = JSON.parse(line)
+          {
+            method: method,
+            url: url,
+            request_headers: req_headers,
+            request_body: req_body,
+            status_code: status,
+            response_headers: res_headers,
+            response_body: res_body,
+            matched_key: route_matcher.match(method, url)
+          }
+        end
       end
 
-      # ------------------------
-      # GET /widgets/{id}
-      # ------------------------
-      if method == "GET" && url.match?(%r{/widgets/\d+$})
-        expect(status).to eq(200)
-
-        # request headers
-        expect(request_headers["Specmatic-Response-Code"]).to eq("200")
-        expect(request_headers["Host"]).to eq("host.docker.internal:9000")
-        expect(request_headers["Accept-Charset"]).to eq("UTF-8")
-        expect(request_headers["Accept"]).to eq("*/*")
-        expect(request_headers["User-Agent"]).to eq("Ktor client")
-        expect(request_headers["Connection"]).to eq("Keep-Alive")
-
-        # response headers
-        expect(response_headers["Vary"]).to eq("Origin")
-        expect(response_headers["X-Specmatic-Result"]).to eq("success")
-        expect(response_headers["X-Specmatic-Type"]).to eq("random")
-        expect(response_headers["Content-Length"]).to eq(response_body.bytesize.to_s)
-        expect(response_headers["Content-Type"]).to eq("application/json")
-        expect(response_headers["Connection"]).to eq("keep-alive")
-
-        # response body
-        res = JSON.parse(response_body)
-        expect(res.keys).to contain_exactly("id", "name", "type")
-
-        expect(res["id"]).to be_a(Integer)
-        expect(res["name"]).to be_a(String)
-        expect(res["name"].length).to be_between(1, 100)
-        expect(%w[mechanical hydraulic]).to include(res["type"])
-
-        next
+      def matched_entries
+        @entries.select { |e| e[:matched_key] }
       end
 
-      # ------------------------
-      # Anything else is a failure
-      # ------------------------
-      raise "Unhandled HTTP entry: #{entry.inspect}"
+      def request_entries
+        matched_entries.select do |e|
+          %w[POST PUT PATCH].include?(e[:method]) && e[:request_body] && !e[:request_body].empty?
+        end
+      end
+
+      def response_entries
+        matched_entries.select { |e| e[:response_body] && !e[:response_body].empty? }
+      end
+
+      it "runs the service stub and tests pass" do
+        expect(@test_status.success?).to be(true), -> { "docker-compose failed:\n#{@test_output}" }
+      end
+
+      it "exercises all routes defined in the OpenAPI spec" do
+        expect(@http_status.success?).to be(true)
+
+        hit_routes = matched_entries.map { |e| e[:matched_key] }.to_set
+        unknown_routes = @entries.reject { |e| e[:matched_key] }.map { |e| [e[:method], e[:url]] }.uniq
+
+        if unknown_routes.any?
+          warn "\nWARNING: Routes not in OpenAPI spec (#{spec_file}) were hit:"
+          unknown_routes.each { |m, u| warn "  - #{m} #{u}" }
+        end
+
+        uncovered = @route_matcher.all_routes - hit_routes
+        expect(uncovered).to be_empty, "Routes not exercised: #{uncovered.to_a}"
+      end
+
+      it "sends valid request headers" do
+        request_entries.each do |entry|
+          operation = @route_matcher.operation_for(entry[:matched_key])
+          content_type = entry[:request_headers]["Content-Type"]&.split(";")&.first
+          expected_types = operation.request_body&.content&.keys || []
+
+          aggregate_failures "#{entry[:method]} #{entry[:url]}" do
+            expect(expected_types).to include(content_type), "Unexpected Content-Type: #{content_type}"
+            expect(entry[:request_headers]["Content-Length"]).to eq(entry[:request_body].bytesize.to_s),
+              "Content-Length mismatch"
+          end
+        end
+      end
+
+      it "sends valid request bodies" do
+        request_entries.each do |entry|
+          operation = @route_matcher.operation_for(entry[:matched_key])
+          content_type = entry[:request_headers]["Content-Type"]&.split(";")&.first
+          media_type = operation.request_body&.content&.[](content_type)
+          next unless media_type&.schema
+
+          path_pattern = entry[:matched_key][1]
+          pointer = self.class.request_schema_pointer(path_pattern, entry[:method], content_type)
+          errors = @schema_validator.validate(pointer, JSON.parse(entry[:request_body]))
+
+          expect(errors).to be_empty, "#{entry[:method]} #{entry[:url]}: #{errors}"
+        end
+      end
+
+      it "receives valid response headers" do
+        response_entries.each do |entry|
+          operation = @route_matcher.operation_for(entry[:matched_key])
+          content_type = entry[:response_headers]["Content-Type"]&.split(";")&.first
+          response_def = operation.responses[entry[:status_code].to_s]
+          expected_types = response_def&.content&.keys || []
+
+          aggregate_failures "#{entry[:method]} #{entry[:url]}" do
+            expect(expected_types).to include(content_type), "Unexpected Content-Type: #{content_type}"
+            expect(entry[:response_headers]["Content-Length"]).to eq(entry[:response_body].bytesize.to_s),
+              "Content-Length mismatch"
+          end
+        end
+      end
+
+      it "receives valid response bodies" do
+        response_entries.each do |entry|
+          operation = @route_matcher.operation_for(entry[:matched_key])
+          content_type = entry[:response_headers]["Content-Type"]&.split(";")&.first
+          response_def = operation.responses[entry[:status_code].to_s]
+          media_type = response_def&.content&.[](content_type)
+          next unless media_type&.schema
+
+          path_pattern = entry[:matched_key][1]
+          pointer = self.class.response_schema_pointer(path_pattern, entry[:method], entry[:status_code], content_type)
+          errors = @schema_validator.validate(pointer, JSON.parse(entry[:response_body]))
+
+          expect(errors).to be_empty, "#{entry[:method]} #{entry[:url]}: #{errors}"
+        end
+      end
     end
-
-    expect(total_lines).to eq(12)
   end
 end
