@@ -4,7 +4,7 @@ require_relative "spec_helper"
 require_relative "support/docker_compose"
 require_relative "../lib/route_matcher"
 require_relative "../lib/schema_validator"
-require_relative "../lib/http_entry"
+require_relative "../lib/http_capture"
 require "json"
 
 RSpec.describe "Specmatic" do
@@ -22,7 +22,7 @@ RSpec.describe "Specmatic" do
         spec_path = File.expand_path("../#{service[:spec_file]}", __dir__)
         @route_matcher = RouteMatcher.new(spec_path)
         @schema_validator = SchemaValidator.new(@route_matcher.spec)
-        @entries = @docker.http_output.each_line.map { |line| HttpEntry.parse(line, @route_matcher) }
+        @http_captures = @docker.http_capture.each_line.map { |line| HttpCapture.parse(line, @route_matcher) }
       end
 
       after(:all) do
@@ -34,10 +34,10 @@ RSpec.describe "Specmatic" do
       end
 
       it "exercises all routes defined in the OpenAPI spec" do
-        expect(@docker.http_logs_succeeded?).to be(true)
+        expect(@docker.http_capture_succeeded?).to be(true)
 
-        hit_routes = @entries.select(&:matched?).map(&:matched_route).to_set
-        unmatched = @entries.reject(&:matched?)
+        hit_routes = @http_captures.select(&:matched?).map(&:matched_route).to_set
+        unmatched = @http_captures.reject(&:matched?)
 
         puts "\nMatched routes for #{service[:spec_file]}:"
         hit_routes.each { |r| puts "  - #{r}" }
@@ -52,73 +52,65 @@ RSpec.describe "Specmatic" do
       end
 
       it "sends valid request headers" do
-        entries_with_request_body.each do |entry|
-          operation = @route_matcher.operation_for(entry.matched_route)
+        http_captures_with_request_body.each do |http_capture|
+          operation = @route_matcher.operation_for(http_capture.matched_route)
           expected_types = operation.request_body&.content&.keys || []
 
-          aggregate_failures entry.to_s do
-            expect(expected_types).to include(entry.request_content_type),
-              "Unexpected Content-Type: #{entry.request_content_type}"
-            expect(entry.request_headers["Content-Length"]).to eq(entry.request_body.bytesize.to_s),
-              "Content-Length mismatch"
+          aggregate_failures http_capture.to_s do
+            expect(expected_types).to include(http_capture.request_content_type),
+                                      "Unexpected Content-Type: #{http_capture.request_content_type}"
+            expect(http_capture.request_headers["Content-Length"]).to eq(http_capture.request_body.bytesize.to_s),
+                                                                      "Content-Length mismatch"
           end
         end
       end
 
       it "sends valid request bodies" do
-        entries_with_request_body.each do |entry|
-          operation = @route_matcher.operation_for(entry.matched_route)
-          media_type = operation.request_body&.content&.[](entry.request_content_type)
-          next unless media_type&.schema
-
-          pointer = @schema_validator.request_schema_pointer(
-            entry.path_pattern, entry.method, entry.request_content_type
+        http_captures_with_request_body.each do |http_capture|
+          errors = @schema_validator.validate_request(
+            path_pattern: http_capture.path_pattern,
+            content_type: http_capture.request_content_type,
+            method: http_capture.method,
+            body: JSON.parse(http_capture.request_body)
           )
-          errors = @schema_validator.validate(pointer, JSON.parse(entry.request_body))
-
-          expect(errors).to be_empty, "#{entry}: #{errors}"
+          expect(errors).to be_empty, "#{http_capture}: #{errors}"
         end
       end
 
       it "receives valid response headers" do
-        entries_with_response_body.each do |entry|
-          operation = @route_matcher.operation_for(entry.matched_route)
-          response_def = operation.responses[entry.status_code.to_s]
+        http_captures_with_response_body.each do |http_capture|
+          operation = @route_matcher.operation_for(http_capture.matched_route)
+          response_def = operation.responses[http_capture.status_code.to_s]
           expected_types = response_def&.content&.keys || []
 
-          aggregate_failures entry.to_s do
-            expect(expected_types).to include(entry.response_content_type),
-              "Unexpected Content-Type: #{entry.response_content_type}"
-            expect(entry.response_headers["Content-Length"]).to eq(entry.response_body.bytesize.to_s),
-              "Content-Length mismatch"
+          aggregate_failures http_capture.to_s do
+            expect(expected_types).to include(http_capture.response_content_type),
+                                      "Unexpected Content-Type: #{http_capture.response_content_type}"
+            expect(http_capture.response_headers["Content-Length"]).to eq(http_capture.response_body.bytesize.to_s),
+                                                                       "Content-Length mismatch"
           end
         end
       end
 
       it "receives valid response bodies" do
-        entries_with_response_body.each do |entry|
-          operation = @route_matcher.operation_for(entry.matched_route)
-          response_def = operation.responses[entry.status_code.to_s]
-          media_type = response_def&.content&.[](entry.response_content_type)
-          next unless media_type&.schema
-
-          pointer = @schema_validator.response_schema_pointer(
-            entry.path_pattern, entry.method, entry.status_code, entry.response_content_type
+        http_captures_with_response_body.each do |http_capture|
+          errors = @schema_validator.validate_response(
+            path_pattern: http_capture.path_pattern,
+            content_type: http_capture.response_content_type,
+            method: http_capture.method,
+            status_code: http_capture.status_code,
+            body: JSON.parse(http_capture.response_body)
           )
-          errors = @schema_validator.validate(pointer, JSON.parse(entry.response_body))
-
-          expect(errors).to be_empty, "#{entry}: #{errors}"
+          expect(errors).to be_empty, "#{http_capture}: #{errors}"
         end
       end
 
-      private
-
-      def entries_with_request_body
-        @entries.select { |e| e.matched? && e.has_request_body? }
+      def http_captures_with_request_body
+        @http_captures.select { |e| e.matched? && e.has_request_body? }
       end
 
-      def entries_with_response_body
-        @entries.select { |e| e.matched? && e.has_response_body? }
+      def http_captures_with_response_body
+        @http_captures.select { |e| e.matched? && e.has_response_body? }
       end
     end
   end

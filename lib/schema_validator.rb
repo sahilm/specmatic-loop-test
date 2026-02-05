@@ -5,21 +5,24 @@ class SchemaValidator
     @spec = spec
   end
 
-  def validate(json_pointer, data)
-    schema = @spec.schema_for(json_pointer)
-    schema.validate(data).map { |e| e["error"] }
-  end
-
-  def request_schema_pointer(path_pattern, method, content_type)
+  def validate_request(path_pattern:, content_type:, method:, body:)
     escaped_path = escape_json_pointer(path_pattern)
     escaped_content_type = escape_json_pointer(content_type)
-    "#/paths/#{escaped_path}/#{method.downcase}/requestBody/content/#{escaped_content_type}/schema"
+    schema_pointer =
+      "#/paths/#{escaped_path}/#{method.downcase}/requestBody/content/#{escaped_content_type}/schema"
+    schema = @spec.schema_for(schema_pointer)
+
+    schema.validate(body).map { |e| e["error"] }
   end
 
-  def response_schema_pointer(path_pattern, method, status_code, content_type)
+  def validate_response(path_pattern:, content_type:, method:, status_code:, body:)
     escaped_path = escape_json_pointer(path_pattern)
     escaped_content_type = escape_json_pointer(content_type)
-    "#/paths/#{escaped_path}/#{method.downcase}/responses/#{status_code}/content/#{escaped_content_type}/schema"
+    schema_pointer =
+      "#/paths/#{escaped_path}/#{method.downcase}/responses/#{status_code}/content/#{escaped_content_type}/schema"
+    schema = @spec.schema_for(schema_pointer)
+
+    schema.validate(body).map { |e| e["error"] }
   end
 
   private

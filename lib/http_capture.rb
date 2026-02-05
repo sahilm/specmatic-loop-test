@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class HttpEntry
+class HttpCapture
   METHODS_WITH_REQUEST_BODY = %w[POST PUT PATCH].freeze
 
   attr_reader :method, :url, :request_headers, :request_body,
