@@ -39,6 +39,9 @@ RSpec.describe "Specmatic" do
         hit_routes = @entries.select(&:matched?).map(&:matched_route).to_set
         unmatched = @entries.reject(&:matched?)
 
+        puts "\nMatched routes for #{service[:spec_file]}:"
+        hit_routes.each { |r| puts "  - #{r}" }
+
         if unmatched.any?
           warn "\nWARNING: Routes not in OpenAPI spec (#{service[:spec_file]}) were hit:"
           unmatched.each { |e| warn "  - #{e}" }
