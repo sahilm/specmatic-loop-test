@@ -8,10 +8,11 @@ class OpenApiSpec
   attr_reader :document
 
   def initialize(spec_path)
-    @document = Openapi3Parser.load_file(spec_path)
+    spec_data = YAML.load_file(spec_path)
+    @document = Openapi3Parser.load(spec_data)
     raise "Invalid OpenAPI spec: #{@document.errors.map(&:message).join(', ')}" unless @document.valid?
 
-    @schemer = JSONSchemer.openapi(YAML.load_file(spec_path))
+    @schemer = JSONSchemer.openapi(spec_data)
   end
 
   def paths
