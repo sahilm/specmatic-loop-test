@@ -6,6 +6,25 @@ info:
 
 paths:
   /widgets:
+    get:
+      summary: Get all widgets
+      operationId: listWidgets
+      responses:
+        '200':
+          description: List of all widgets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Widget'
+              example:
+                - id: 1
+                  name: Gear
+                  type: mechanical
+                - id: 2
+                  name: Pump
+                  type: hydraulic
     post:
       summary: Create a new widget
       operationId: createWidget
