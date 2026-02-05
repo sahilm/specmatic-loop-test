@@ -42,6 +42,7 @@ class RouteMatcher
   end
 
   def pattern_to_regex(pattern)
-    Regexp.new("^" + pattern.gsub(/\{[^}]+\}/, "[^/]+") + "$")
+    escaped = Regexp.escape(pattern)
+    Regexp.new("^" + escaped.gsub(/\\\{[^}]+\\\}/, "[^/]+") + "$")
   end
 end

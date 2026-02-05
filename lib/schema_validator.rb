@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "cgi"
+
 class SchemaValidator
   def initialize(spec)
     @spec = spec
@@ -29,6 +31,6 @@ class SchemaValidator
 
   def escape_json_pointer(str)
     escaped = str.gsub("~", "~0").gsub("/", "~1")
-    URI::DEFAULT_PARSER.escape(escaped, /[{}]/)
+    escaped.gsub(/[{}]/) { |c| CGI.escape(c) }
   end
 end

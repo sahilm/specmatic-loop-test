@@ -67,11 +67,17 @@ RSpec.describe "Specmatic" do
 
       it "sends valid request bodies" do
         http_captures_with_request_body.each do |http_capture|
+          body = begin
+            JSON.parse(http_capture.request_body)
+          rescue JSON::ParserError => e
+            fail "#{http_capture}: Invalid JSON in request body: #{e.message}"
+          end
+
           errors = @schema_validator.validate_request(
             path_pattern: http_capture.path_pattern,
             content_type: http_capture.request_content_type,
             method: http_capture.method,
-            body: JSON.parse(http_capture.request_body)
+            body: body
           )
           expect(errors).to be_empty, "#{http_capture}: #{errors}"
         end
@@ -81,9 +87,12 @@ RSpec.describe "Specmatic" do
         http_captures_with_response_body.each do |http_capture|
           operation = @route_matcher.operation_for(http_capture.matched_route)
           response_def = operation.responses[http_capture.status_code.to_s]
-          expected_types = response_def&.content&.keys || []
 
           aggregate_failures http_capture.to_s do
+            expect(response_def).not_to be_nil,
+                                        "Status code #{http_capture.status_code} not defined in OpenAPI spec"
+
+            expected_types = response_def&.content&.keys || []
             expect(expected_types).to include(http_capture.response_content_type),
                                       "Unexpected Content-Type: #{http_capture.response_content_type}"
             expect(http_capture.response_headers["Content-Length"]).to eq(http_capture.response_body.bytesize.to_s),
@@ -94,12 +103,18 @@ RSpec.describe "Specmatic" do
 
       it "receives valid response bodies" do
         http_captures_with_response_body.each do |http_capture|
+          body = begin
+            JSON.parse(http_capture.response_body)
+          rescue JSON::ParserError => e
+            fail "#{http_capture}: Invalid JSON in response body: #{e.message}"
+          end
+
           errors = @schema_validator.validate_response(
             path_pattern: http_capture.path_pattern,
             content_type: http_capture.response_content_type,
             method: http_capture.method,
             status_code: http_capture.status_code,
-            body: JSON.parse(http_capture.response_body)
+            body: body
           )
           expect(errors).to be_empty, "#{http_capture}: #{errors}"
         end
