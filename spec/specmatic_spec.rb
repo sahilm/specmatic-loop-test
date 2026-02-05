@@ -19,7 +19,9 @@ RSpec.describe "Specmatic" do
     http_captured_lines, status = Open3.capture2e("docker-compose logs mitm --no-color --no-log-prefix")
     expect(status.success?).to be(true), -> { "docker-compose failed:\n#{http_captured_lines}" }
 
+    total_lines = 0
     http_captured_lines.each_line do |entry|
+      total_lines += 1
       method, url, request_headers, request_body, status, response_headers, response_body = JSON.parse(entry)
 
       # ------------------------
@@ -152,5 +154,6 @@ RSpec.describe "Specmatic" do
       raise "Unhandled HTTP entry: #{entry.inspect}"
     end
 
+    expect(total_lines).to eq(12)
   end
 end
