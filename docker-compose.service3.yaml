@@ -5,7 +5,7 @@ services:
     ports:
       - "9000:9000"
     volumes:
-      - ./service2.yaml:/service.yaml:ro
+      - ./service3.yaml:/service.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/actuator/health"]
       interval: 2s
@@ -33,7 +33,7 @@ services:
     command: test /service.yaml --testBaseURL=http://localhost:9001
     network_mode: host
     volumes:
-      - ./service2.yaml:/service.yaml:ro
+      - ./service3.yaml:/service.yaml:ro
     depends_on:
       mitm:
         condition: service_started

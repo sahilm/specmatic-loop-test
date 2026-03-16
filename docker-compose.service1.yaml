@@ -1,6 +1,6 @@
 services:
   stub:
-    image: specmatic/specmatic
+    image: specmatic/specmatic:${SPECMATIC_VERSION}
     command: stub /service.yaml --port 9000
     ports:
       - "9000:9000"
@@ -29,7 +29,7 @@ services:
       - ./capture.py:/addons/capture.py:ro
 
   test:
-    image: specmatic/specmatic
+    image: specmatic/specmatic:${SPECMATIC_VERSION}
     command: test /service.yaml --testBaseURL=http://localhost:9001
     network_mode: host
     volumes:

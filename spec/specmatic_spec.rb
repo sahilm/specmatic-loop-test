@@ -9,14 +9,16 @@ require "json"
 
 RSpec.describe "Specmatic" do
   SERVICES = [
-    { compose_file: "docker-compose.service1.yaml", spec_file: "service1.yaml" },
-    { compose_file: "docker-compose.service2.yaml", spec_file: "service2.yaml" }
+    { compose_file: "docker-compose.service1.yaml", spec_file: "service1.yaml", specmatic_version: '2.42.2' },
+    { compose_file: "docker-compose.service2.yaml", spec_file: "service2.yaml", specmatic_version: '2.42.2' },
+    { compose_file: "docker-compose.service3.yaml", spec_file: "service3.yaml", specmatic_version: '2.42.2' },
+    { compose_file: "docker-compose.service3.yaml", spec_file: "service3.yaml", specmatic_version: '2.39.0' },
   ].freeze
 
   SERVICES.each do |service|
-    context "with #{service[:spec_file]}" do
+    context "with #{service[:spec_file]} and specmatic version #{service[:specmatic_version]}" do
       before(:all) do
-        @docker = DockerCompose::Runner.new(service[:compose_file])
+        @docker = DockerCompose::Runner.new(service[:compose_file], service[:specmatic_version])
         @docker.run
 
         spec_path = File.expand_path("../#{service[:spec_file]}", __dir__)
