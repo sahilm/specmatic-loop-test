@@ -1,0 +1,22 @@
+openapi: 3.0.0
+
+info:
+  title: Hello world
+  version: "1.0"
+paths:
+  /hello/{id}-{some-other-id}:
+    get:
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: some-other-id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK

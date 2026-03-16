@@ -12,7 +12,10 @@ RSpec.describe "Specmatic" do
     { compose_file: "docker-compose.service1.yaml", spec_file: "service1.yaml", specmatic_version: '2.42.2' },
     { compose_file: "docker-compose.service2.yaml", spec_file: "service2.yaml", specmatic_version: '2.42.2' },
     { compose_file: "docker-compose.service3.yaml", spec_file: "service3.yaml", specmatic_version: '2.42.2' },
+    # fails on 2.39.0. Fixed in https://github.com/specmatic/specmatic/pull/2335
     { compose_file: "docker-compose.service3.yaml", spec_file: "service3.yaml", specmatic_version: '2.39.0' },
+    # fails on 2.42.2. Will be fixed in https://github.com/specmatic/specmatic/pull/2317
+    { compose_file: "docker-compose.service4.yaml", spec_file: "service4.yaml", specmatic_version: '2.42.2' },
   ].freeze
 
   SERVICES.each do |service|
@@ -70,10 +73,10 @@ RSpec.describe "Specmatic" do
       it "sends valid request bodies" do
         http_captures_with_request_body.each do |http_capture|
           body = begin
-            JSON.parse(http_capture.request_body)
-          rescue JSON::ParserError => e
-            fail "#{http_capture}: Invalid JSON in request body: #{e.message}"
-          end
+                   JSON.parse(http_capture.request_body)
+                 rescue JSON::ParserError => e
+                   fail "#{http_capture}: Invalid JSON in request body: #{e.message}"
+                 end
 
           errors = @schema_validator.validate_request(
             path_pattern: http_capture.path_pattern,
@@ -106,10 +109,10 @@ RSpec.describe "Specmatic" do
       it "receives valid response bodies" do
         http_captures_with_response_body.each do |http_capture|
           body = begin
-            JSON.parse(http_capture.response_body)
-          rescue JSON::ParserError => e
-            fail "#{http_capture}: Invalid JSON in response body: #{e.message}"
-          end
+                   JSON.parse(http_capture.response_body)
+                 rescue JSON::ParserError => e
+                   fail "#{http_capture}: Invalid JSON in response body: #{e.message}"
+                 end
 
           errors = @schema_validator.validate_response(
             path_pattern: http_capture.path_pattern,

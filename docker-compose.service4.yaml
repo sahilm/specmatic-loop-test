@@ -1,0 +1,39 @@
+services:
+  stub:
+    image: specmatic/specmatic:${SPECMATIC_VERSION}
+    command: stub /service.yaml --port 9000
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./service4.yaml:/service.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/actuator/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  mitm:
+    image: mitmproxy/mitmproxy
+    depends_on:
+      stub:
+        condition: service_healthy
+    command: >
+      mitmdump
+      --quiet
+      --mode reverse:http://host.docker.internal:9000
+      --listen-port 9001
+      -s /addons/capture.py
+    ports:
+      - "9001:9001"
+    volumes:
+      - ./capture.py:/addons/capture.py:ro
+
+  test:
+    image: specmatic/specmatic:${SPECMATIC_VERSION}
+    command: test /service.yaml --testBaseURL=http://localhost:9001
+    network_mode: host
+    volumes:
+      - ./service4.yaml:/service.yaml:ro
+    depends_on:
+      mitm:
+        condition: service_started
